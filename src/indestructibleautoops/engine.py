@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +14,7 @@ from .adapters.generic import AdapterContext, GenericAdapter, detect_adapter, lo
 from .adapters.go import GoAdapter
 from .adapters.node import NodeAdapter
 from .adapters.python import PythonAdapter
-from .graph import DAG, dag_is_acyclic
+from .graph import DAG, GraphError, dag_is_acyclic, topological_sort
 from .hashing import Hasher
 from .io import ensure_dir, read_text, write_text
 from .normalize import Normalizer
@@ -325,3 +326,117 @@ class Engine:
                 return {"ok": False, "error": "seal_failed", "seal": seal}
             return {"ok": True, "sealed": seal}
         return {"ok": True, "monitoring": "noop"}
+
+
+class ExecutionContext:
+    """Shared execution context across pipeline steps."""
+
+    def __init__(self):
+        self.data: dict[str, Any] = {}
+
+    def set(self, key: str, value: Any):
+        self.data[key] = value
+
+    def get(self, key: str, default: Any | None = None) -> Any:
+        return self.data.get(key, default)
+
+
+class StepReport:
+    """Step execution report."""
+
+    def __init__(
+        self,
+        step_id: str,
+        status: str,
+        output: Any | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        error: str | None = None,
+    ):
+        self.step_id = step_id
+        self.status = status
+        self.output = output
+        self.start_time = start_time or time.time()
+        self.end_time = end_time
+        self.error = error
+        self.duration = 0.0
+
+        if start_time and end_time:
+            self.duration = end_time - start_time
+
+
+class PipelineEngine:
+    """DAG-driven pipeline execution engine."""
+
+    def __init__(self):
+        self.steps: dict[str, Any] = {}
+        self.dependencies: list[tuple[str, str]] = []
+        self.reports: dict[str, StepReport] = {}
+        self.context = ExecutionContext()
+
+    def register_step(self, step_id: str, func: Any | None = None, depends_on: Any | None = None):
+        """Register a step function; usable as a decorator or direct call."""
+
+        def _register(fn: Any):
+            self.steps[step_id] = fn
+            if depends_on:
+                deps = [depends_on] if isinstance(depends_on, str) else list(depends_on)
+                for dep in deps:
+                    self.dependencies.append((dep, step_id))
+            return fn
+
+        if func is not None:
+            return _register(func)
+        return _register
+
+    def build_execution_plan(self) -> list[str]:
+        """Build a topologically sorted execution plan."""
+        try:
+            return topological_sort(nodes=list(self.steps.keys()), edges=self.dependencies)
+        except GraphError as e:
+            logging.error(f"DAG validation failed: {e}")
+            raise
+
+    def execute_step(self, step_id: str) -> StepReport:
+        """Execute a single step and produce a StepReport."""
+        if step_id not in self.steps:
+            return StepReport(step_id, "error", error=f"Step '{step_id}' not registered")
+
+        func = self.steps[step_id]
+        start_time = time.time()
+
+        try:
+            result = func(self.context)
+            report = StepReport(
+                step_id=step_id,
+                status="success",
+                output=result,
+                start_time=start_time,
+                end_time=time.time(),
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            report = StepReport(
+                step_id=step_id,
+                status="error",
+                error=str(e),
+                start_time=start_time,
+                end_time=time.time(),
+            )
+
+        self.reports[step_id] = report
+        return report
+
+    def run_pipeline(self) -> dict[str, Any]:
+        """Execute the pipeline following the DAG order."""
+        execution_plan = self.build_execution_plan()
+        final_report: dict[str, Any] = {}
+
+        for step_id in execution_plan:
+            report = self.execute_step(step_id)
+            final_report[step_id] = report.__dict__
+
+            if report.status == "error":
+                logging.error(f"Step '{step_id}' failed: {report.error}")
+                break
+
+        return final_report

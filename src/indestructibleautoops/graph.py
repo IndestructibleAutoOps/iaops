@@ -1,7 +1,39 @@
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass
 from typing import Any
+
+
+class GraphError(Exception):
+    """Raised when the DAG contains a cyclic dependency."""
+
+
+def topological_sort(nodes: list[str], edges: list[tuple[str, str]]) -> list[str]:
+    """Return a topological ordering of the DAG or raise GraphError on cycles."""
+    graph: dict[str, list[str]] = {node: [] for node in nodes}
+    in_degree: dict[str, int] = {node: 0 for node in nodes}
+
+    for parent, child in edges:
+        graph[parent].append(child)
+        in_degree[child] = in_degree.get(child, 0) + 1
+
+    queue: deque[str] = deque([node for node in nodes if in_degree[node] == 0])
+    sorted_nodes: list[str] = []
+
+    while queue:
+        node = queue.popleft()
+        sorted_nodes.append(node)
+
+        for neighbor in graph[node]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    if len(sorted_nodes) != len(nodes):
+        raise GraphError("Cyclic dependency detected in DAG")
+
+    return sorted_nodes
 
 
 @dataclass(frozen=True)
