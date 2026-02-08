@@ -1,0 +1,1 @@
+是否符合治理規格（Governance Compliance Check）MACHINE_READABLE_ONLY：是（輸出為檔案內容）DAG：是（configs/indestructibleautoops.pipeline.yaml + cycle檢測）角色ID唯一：是（configs/indestructibleautoops.roles.yaml）證據封存：是（hash-manifest + seal manifest）可解析：是（JSON Schema + 測試覆蓋）

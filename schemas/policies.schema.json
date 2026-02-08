@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "indestructibleautoops.policies.schema.json",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "type": "string" },
+    "kind": { "const": "Policies" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "properties": {
+        "filesystem": { "type": "object" },
+        "naming": { "type": "object" },
+        "supplyChain": { "type": "object" },
+        "ci": { "type": "object" },
+        "gates": { "type": "object" }
+      }
+    }
+  }
+}

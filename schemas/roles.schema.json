@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "indestructibleautoops.roles.schema.json",
+  "type": "object",
+  "required": ["apiVersion", "kind", "metadata", "spec"],
+  "properties": {
+    "apiVersion": { "type": "string" },
+    "kind": { "const": "RoleRegistry" },
+    "metadata": { "type": "object" },
+    "spec": {
+      "type": "object",
+      "required": ["roles"],
+      "properties": {
+        "roles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "tags", "inputContract", "outputContract", "dependsOn"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9_\\-]+$" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "inputContract": { "type": "object" },
+              "outputContract": { "type": "object" },
+              "dependsOn": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}
