@@ -21,6 +21,28 @@ class DAG:
                 return list(n.get("deps", []))
         return []
 
+    def topological_sort(self) -> list[str] | None:
+        ids = set(self.ids())
+        graph: dict[str, list[str]] = {i: [] for i in ids}
+        indeg: dict[str, int] = {i: 0 for i in ids}
+        for i in ids:
+            deps = [d for d in self.deps(i) if d in ids]
+            for d in deps:
+                graph[d].append(i)
+                indeg[i] += 1
+        q: list[str] = [i for i in ids if indeg[i] == 0]
+        order: list[str] = []
+        while q:
+            cur = q.pop(0)
+            order.append(cur)
+            for nxt in graph[cur]:
+                indeg[nxt] -= 1
+                if indeg[nxt] == 0:
+                    q.append(nxt)
+        if len(order) != len(ids):
+            return None
+        return order
+
 
 def dag_is_acyclic(dag: DAG) -> bool:
     ids = set(dag.ids())
