@@ -13,7 +13,9 @@ def test_pipeline_dag_execution_order():
     dag = PipelineDAG(nodes=["a", "b", "c"], edges=[("a", "b"), ("b", "c")])
     assert dag.has_cycle() is False
     assert dag.topological_order() == ["a", "b", "c"]
-    out = dag.execute({"a": lambda _: "A", "b": lambda ctx: ctx["a"] + "B", "c": lambda ctx: ctx["b"] + "C"})
+    out = dag.execute(
+        {"a": lambda _: "A", "b": lambda ctx: ctx["a"] + "B", "c": lambda ctx: ctx["b"] + "C"}
+    )
     assert out["c"] == "ABC"
 
 
@@ -39,7 +41,10 @@ def test_ci_manager_templates_and_updates(tmp_path: Path, monkeypatch):
 
 
 def test_agent_orchestrator_runs_dag(tmp_path: Path):
-    dag = PipelineDAG(nodes=["pre_process", "process", "post_process"], edges=[("pre_process", "process"), ("process", "post_process")])
+    dag = PipelineDAG(
+        nodes=["pre_process", "process", "post_process"],
+        edges=[("pre_process", "process"), ("process", "post_process")],
+    )
     scanner = SecurityScanner([])
     governance = GovernanceSystem()
     ci_manager = CIManager(tmp_path)

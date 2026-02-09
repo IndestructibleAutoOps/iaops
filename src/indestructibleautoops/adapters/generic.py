@@ -53,7 +53,7 @@ class GenericAdapter:
         scanner = SecurityScanner()
         findings: list[dict[str, Any]] = []
         blocked = False
-        
+
         for p in self.ctx.project_root.rglob("*"):
             if p.is_dir():
                 continue
@@ -61,22 +61,24 @@ class GenericAdapter:
                 rel = p.relative_to(self.ctx.project_root)
             except ValueError:
                 rel = p
-            
+
             try:
                 content = p.read_text(encoding="utf-8", errors="ignore")
                 report = scanner.inspect(str(rel), content)
-                
+
                 if not report["is_secure"]:
                     blocked = True
-                    findings.append({
-                        "path": str(rel),
-                        "blocked_by_name": report["blocked_by_name"],
-                        "sensitive_found": report["sensitive_found"],
-                        "risks": report["risks"],
-                    })
+                    findings.append(
+                        {
+                            "path": str(rel),
+                            "blocked_by_name": report["blocked_by_name"],
+                            "sensitive_found": report["sensitive_found"],
+                            "risks": report["risks"],
+                        }
+                    )
             except OSError:
                 continue
-        
+
         return {
             "blocked": blocked,
             "checks": findings,

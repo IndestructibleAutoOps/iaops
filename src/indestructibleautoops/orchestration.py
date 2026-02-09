@@ -3,10 +3,11 @@ from __future__ import annotations
 import os
 import re
 from collections import deque
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any
 
 
 class PipelineDAG:
@@ -43,7 +44,7 @@ class PipelineDAG:
 
     def topological_order(self) -> list[str] | None:
         indeg: dict[str, int] = {n: 0 for n in self._graph}
-        for src, dsts in self._graph.items():
+        for _src, dsts in self._graph.items():
             for dst in dsts:
                 indeg[dst] = indeg.get(dst, 0) + 1
         q = deque([n for n, deg in indeg.items() if deg == 0])
@@ -190,4 +191,10 @@ class AgentOrchestrator:
             ctx[step] = fn(ctx)
 
         monitoring = self.governance.continuous_monitoring()
-        return {"ok": True, "order": order, "results": ctx, "approval": approval, "monitor": monitoring}
+        return {
+            "ok": True,
+            "order": order,
+            "results": ctx,
+            "approval": approval,
+            "monitor": monitoring,
+        }
