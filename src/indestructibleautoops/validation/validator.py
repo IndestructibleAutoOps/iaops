@@ -38,6 +38,7 @@ class ValidationIssue:
     category: str
     title: str
     description: str
+    source: str = ""
     file_path: str | None = None
     line_number: int | None = None
     suggestion: str | None = None
@@ -59,6 +60,7 @@ class ValidationIssue:
             "category": self.category,
             "title": self.title,
             "description": self.description,
+            "source": self.source,
             "file_path": self.file_path,
             "line_number": self.line_number,
             "suggestion": self.suggestion,

@@ -6,6 +6,8 @@ critical regressions in quality, performance, and functionality,
 with false-positive suppression via a whitelist mechanism.
 """
 
+from .engine import ValidationEngine
+from .file_validator import FileCheckValidator
 from .metrics import (
     BlockingPolicy,
     MetricResult,
@@ -14,7 +16,13 @@ from .metrics import (
     get_default_thresholds,
     percentile,
 )
+from .performance_validator import PerformanceTest, PerformanceValidator
 from .regression import RegressionSuite, RegressionTest, RegressionValidator
+from .regression_detector import (
+    RegressionDetector,
+    detect_numeric_regression,
+    detect_structural_regression,
+)
 from .strict_validator import (
     StrictValidationConfig,
     StrictValidator,
@@ -29,10 +37,21 @@ __all__ = [
     "ValidationResult",
     "Severity",
     "STRICT_MODE",
+    # Validation engine
+    "ValidationEngine",
     # Regression testing
     "RegressionTest",
     "RegressionSuite",
     "RegressionValidator",
+    # Standalone regression detector
+    "RegressionDetector",
+    "detect_numeric_regression",
+    "detect_structural_regression",
+    # File validator
+    "FileCheckValidator",
+    # Performance validator
+    "PerformanceValidator",
+    "PerformanceTest",
     # Advanced metrics
     "MetricsValidator",
     "MetricThreshold",
