@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0.0",
+  "root_anchor": "urn:iao:a:root:v2",
+  "artifacts": [
+    {
+      "urn": "urn:iao:f:unified-charter:v1",
+      "path": "clean-final/unified-charter",
+      "version": "1.0.0"
+    },
+    {
+      "urn": "urn:iao:f:global-index:v1",
+      "path": "clean-final/global/global_index.json",
+      "version": "1.0.0"
+    }
+  ]
+}

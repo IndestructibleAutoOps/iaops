@@ -1,0 +1,43 @@
+apiVersion: iao.io/v1
+kind: GovernanceClosure
+metadata:
+  name: governance-closure
+spec:
+  rootAnchorRef: "urn:iao:a:root:v2"
+  activation:
+    unifiedCharter:
+      enabled: true
+      refs:
+        - "clean-final/unified-charter/naming_short.yaml"
+        - "clean-final/unified-charter/rootanchor.v2.yaml"
+        - "clean-final/unified-charter/semantictree.v2.yaml"
+        - "clean-final/unified-charter/schemaregistry.v2.yaml"
+        - "clean-final/unified-charter/typesystem.v2.yaml"
+        - "clean-final/unified-charter/executionsemantics.v2.yaml"
+        - "clean-final/unified-charter/replayspec.v2.yaml"
+        - "clean-final/unified-charter/id_registry.json"
+        - "clean-final/unified-charter/reference_map.json"
+        - "clean-final/unified-charter/semantic_merkle.json"
+        - "clean-final/unified-charter/search_bloom.json"
+  closureRules:
+    - id: modules_must_be_in_tree
+      mode: fail_closed
+      targets:
+        - "clean-final/global/global_index.json"
+        - "clean-final/unified-charter/semantictree.v2.yaml"
+    - id: schemas_must_be_registered
+      mode: fail_closed
+      targets:
+        - "clean-final/unified-charter/schemaregistry.v2.yaml"
+        - "clean-final/final/final_output_index.json"
+    - id: event_payloads_must_bind_types
+      mode: fail_closed
+      targets:
+        - "clean-final/unified-charter/typesystem.v2.yaml"
+        - "clean-final/events/event_stream.yaml"
+    - id: seal_requires_replay
+      mode: enforce
+      targets:
+        - "clean-final/unified-charter/replayspec.v2.yaml"
+        - "clean-final/global/global_seal.yaml"
+        - "clean-final/final/final_seal.yaml"

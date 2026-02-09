@@ -1,0 +1,20 @@
+apiVersion: iao.io/v1
+kind: MetricsSpec
+metadata:
+  name: metrics-spec
+  urn: "urn:iao:s:metrics-spec:v1"
+spec:
+  version: "1.0.0"
+  metrics:
+    - id: cpu_usage
+      description: CPU utilization percentage
+      unit: percent
+      type: gauge
+    - id: memory_usage
+      description: Memory usage percentage
+      unit: percent
+      type: gauge
+    - id: error_rate
+      description: Rate of errors per minute
+      unit: rpm
+      type: gauge

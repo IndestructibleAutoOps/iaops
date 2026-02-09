@@ -1,0 +1,14 @@
+apiVersion: iao.io/v1
+kind: GlobalSeal
+metadata:
+  name: global-seal
+spec:
+  rootAnchorRef: "urn:iao:a:root:v2"
+  manifest: "clean-final/unified-charter/replay_manifest.v2.json"
+  hashing:
+    algorithm: sha3-512
+    contentAddressing: "iao:{kind}:{b32_24}"
+  seals:
+    semanticClosure: true
+    schemaRegistry: true
+    typeSystem: true
