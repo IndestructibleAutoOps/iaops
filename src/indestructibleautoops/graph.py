@@ -6,19 +6,27 @@ from typing import Any
 
 
 class GraphError(Exception):
-    """Raised when the DAG contains a cyclic dependency."""
+    """Raised when the DAG contains a cyclic dependency or invalid edges."""
 
 
 def topological_sort(nodes: list[str], edges: list[tuple[str, str]]) -> list[str]:
-    """Return a topological ordering of the DAG or raise GraphError on cycles."""
+    """Return a topological ordering of the DAG or raise GraphError on cycles.
+
+    Raises GraphError if an edge references a node not present in *nodes*.
+    """
+    node_set = set(nodes)
     graph: dict[str, list[str]] = {node: [] for node in nodes}
     in_degree: dict[str, int] = {node: 0 for node in nodes}
 
     for parent, child in edges:
+        if parent not in node_set:
+            raise GraphError(f"Edge references unknown parent node: {parent!r}")
+        if child not in node_set:
+            raise GraphError(f"Edge references unknown child node: {child!r}")
         graph[parent].append(child)
         in_degree[child] = in_degree.get(child, 0) + 1
 
-    queue: deque[str] = deque([node for node in nodes if in_degree[node] == 0])
+    queue: deque[str] = deque(node for node in nodes if in_degree[node] == 0)
     sorted_nodes: list[str] = []
 
     while queue:
@@ -54,44 +62,52 @@ class DAG:
         return []
 
     def topological_sort(self) -> list[str] | None:
-        ids = set(self.ids())
-        graph: dict[str, list[str]] = {i: [] for i in ids}
-        indeg: dict[str, int] = {i: 0 for i in ids}
-        for i in ids:
-            deps = [d for d in self.deps(i) if d in ids]
+        """Return a deterministic topological ordering or None on cycle.
+
+        Iterates in the original node-list order so that the result is
+        stable across runs.  Uses ``collections.deque`` for O(1) pops.
+        """
+        id_list = self.ids()
+        id_set = set(id_list)
+        graph: dict[str, list[str]] = {i: [] for i in id_list}
+        indeg: dict[str, int] = {i: 0 for i in id_list}
+        for i in id_list:
+            deps = [d for d in self.deps(i) if d in id_set]
             for d in deps:
                 graph[d].append(i)
                 indeg[i] += 1
-        q: list[str] = [i for i in ids if indeg[i] == 0]
+        q: deque[str] = deque(i for i in id_list if indeg[i] == 0)
         order: list[str] = []
         while q:
-            cur = q.pop(0)
+            cur = q.popleft()
             order.append(cur)
             for nxt in graph[cur]:
                 indeg[nxt] -= 1
                 if indeg[nxt] == 0:
                     q.append(nxt)
-        if len(order) != len(ids):
+        if len(order) != len(id_list):
             return None
         return order
 
 
 def dag_is_acyclic(dag: DAG) -> bool:
-    ids = set(dag.ids())
-    graph: dict[str, list[str]] = {i: [] for i in ids}
-    indeg: dict[str, int] = {i: 0 for i in ids}
-    for i in ids:
-        deps = [d for d in dag.deps(i) if d in ids]
+    """Check whether *dag* is acyclic using deterministic iteration order."""
+    id_list = dag.ids()
+    id_set = set(id_list)
+    graph: dict[str, list[str]] = {i: [] for i in id_list}
+    indeg: dict[str, int] = {i: 0 for i in id_list}
+    for i in id_list:
+        deps = [d for d in dag.deps(i) if d in id_set]
         for d in deps:
             graph[d].append(i)
             indeg[i] += 1
-    q = [i for i in ids if indeg[i] == 0]
+    q: deque[str] = deque(i for i in id_list if indeg[i] == 0)
     seen = 0
     while q:
-        cur = q.pop()
+        cur = q.popleft()
         seen += 1
         for nxt in graph[cur]:
             indeg[nxt] -= 1
             if indeg[nxt] == 0:
                 q.append(nxt)
-    return seen == len(ids)
+    return seen == len(id_list)

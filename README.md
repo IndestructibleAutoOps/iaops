@@ -1,15 +1,14 @@
-IndestructibleAutoOps Skeleton-to-ClosedLoop
-============================================
+# IndestructibleAutoOps Skeleton-to-ClosedLoop
 
 ## Governance Engine
 
-The governance engine drives every run: it loads the pipeline spec, resolves adapters, executes the DAG steps, records events, hashes evidence, and optionally repairs or seals a project. All flows (plan, repair, verify, seal) are orchestrated through the CLI entrypoint `indestructibleautoops`.
+The governance engine drives every run: it loads the pipeline spec, resolves adapters, validates the configured DAG, runs the hard-coded execution sequence, records events, hashes evidence, and optionally repairs or seals a project. Planning, verification, and sealing flows are exposed as dedicated CLI subcommands (`indestructibleautoops plan`, `indestructibleautoops verify`, `indestructibleautoops seal`), while repair/default runs are invoked via `indestructibleautoops run` with the appropriate mode.
 
 ### First-class architecture elements
 
 - PatchSet: planner + patcher collaborate to propose and apply a governed patch set, producing a patch report under `.indestructibleautoops/`.
 - HashBoundary: hashing and sealing create immutable boundaries via hash manifests and seal evidence so downstream steps can trust prior state.
-- ReplayEngine: the event stream (`.indestructibleautoops/governance/event-stream.jsonl`) captures traceable events so runs are replayable and auditable.
+- ReplayEngine / EventStream: a conceptual replay layer over the JSONL event stream (implemented by the `EventStream` component) that captures traceable events so runs are replayable and auditable. The event stream path defaults to `.indestructibleautoops/governance/event-stream.jsonl` but is configurable via `spec.eventStream`.
 - ClosedLoop: end-to-end loop (normalize → plan → patch → verify → seal) keeps projects in compliance by feeding verification back into future plans.
 
 Purpose
@@ -40,8 +39,8 @@ Implemented and usable today
 
 Placeholders / fictional capabilities (not implemented)
 -------------------------------------------------------
-- No real multi-agent orchestration or policy execution despite the role/policy configs; they are only schema-validated and not enforced beyond simple checks.
-- No vulnerability/secret/content scanning beyond filename regex matches; `security_scan` is a stub that always passes.
-- No actual CI templates or dependency updates are applied; patching only writes minimal placeholder files when allowed.
-- DAG in the config is only checked for cycles; step execution order is hard-coded, not driven by the DAG.
+- No real multi-agent orchestration or rich policy execution despite the role/policy configs; they are only schema-validated and enforced via basic helpers, not a full policy engine.
+- No vulnerability/secret/content scanning beyond filename regex matches and basic pattern detection; `security_scan` performs simple regex-based checks only.
+- Only minimal, generic CI workflow and dependency helpers exist (`orchestration.py`); no provider-specific templates or real dependency resolution/updates are applied, and patching still writes mostly placeholder files when allowed.
+- DAG in the config is validated for cycles and used to compute a topological execution order, but advanced orchestration features (e.g., parallelism, conditional branches, dynamic DAG updates) are not implemented.
 - Approval chains, continuous monitoring, and governance beyond hash/seal recording are placeholders with fixed responses.

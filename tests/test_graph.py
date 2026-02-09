@@ -1,4 +1,6 @@
-from indestructibleautoops.graph import DAG, dag_is_acyclic
+import pytest
+
+from indestructibleautoops.graph import DAG, GraphError, dag_is_acyclic, topological_sort
 
 
 def test_dag_acyclic_ok():
@@ -38,7 +40,10 @@ def test_dag_topological_sort():
             {"id": "c", "deps": []},
         ]
     )
-    assert set(dag.topological_sort()) == {"c", "a", "b"}
+    order = dag.topological_sort()
+    assert order is not None
+    assert order[0] == "c"
+    assert set(order) == {"c", "a", "b"}
 
     dag = DAG.from_nodes(
         [
@@ -55,3 +60,31 @@ def test_dag_topological_sort():
     assert pos["d"] < pos["b"] < pos["a"]
     assert pos["d"] < pos["c"] < pos["a"]
     assert pos["e"] < pos["c"]
+
+
+def test_topological_sort_deterministic():
+    """Verify that repeated calls produce the same order."""
+    dag = DAG.from_nodes(
+        [
+            {"id": "a", "deps": ["c"]},
+            {"id": "b", "deps": ["c"]},
+            {"id": "c", "deps": []},
+        ]
+    )
+    results = [dag.topological_sort() for _ in range(20)]
+    assert all(r == results[0] for r in results)
+
+
+def test_topological_sort_unknown_parent_raises():
+    with pytest.raises(GraphError, match="unknown parent node"):
+        topological_sort(["a", "b"], [("x", "a")])
+
+
+def test_topological_sort_unknown_child_raises():
+    with pytest.raises(GraphError, match="unknown child node"):
+        topological_sort(["a", "b"], [("a", "z")])
+
+
+def test_topological_sort_cycle_raises():
+    with pytest.raises(GraphError, match="Cyclic dependency"):
+        topological_sort(["a", "b"], [("a", "b"), ("b", "a")])

@@ -8,8 +8,20 @@ from .io import ensure_dir, write_text
 
 class Patcher:
     def __init__(self, project_root: Path, allow_writes: bool):
-        self.root = project_root
+        self.root = project_root.resolve()
         self.allow_writes = allow_writes
+
+    def _safe_resolve(self, rel: str) -> Path | None:
+        """Resolve *rel* under project root; return None if it escapes."""
+        if Path(rel).is_absolute():
+            return None
+        resolved = (self.root / rel).resolve()
+        # Ensure the resolved path is within project root
+        try:
+            resolved.relative_to(self.root)
+        except ValueError:
+            return None
+        return resolved
 
     def apply(self, plan: dict[str, Any]) -> dict[str, Any]:
         actions = plan.get("actions", [])
@@ -19,7 +31,10 @@ class Patcher:
             kind = a.get("kind")
             if kind == "mkdir":
                 rel = a["path"]
-                p = self.root / rel
+                p = self._safe_resolve(rel)
+                if p is None:
+                    skipped.append({"action": a, "reason": "path_traversal_blocked"})
+                    continue
                 if p.exists():
                     skipped.append({"action": a, "reason": "exists"})
                     continue
@@ -31,7 +46,10 @@ class Patcher:
                 continue
             if kind == "write_file_if_missing":
                 rel = a["path"]
-                p = self.root / rel
+                p = self._safe_resolve(rel)
+                if p is None:
+                    skipped.append({"action": a, "reason": "path_traversal_blocked"})
+                    continue
                 if p.exists():
                     skipped.append({"action": a, "reason": "exists"})
                     continue

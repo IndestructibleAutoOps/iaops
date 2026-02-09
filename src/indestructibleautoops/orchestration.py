@@ -2,63 +2,39 @@ from __future__ import annotations
 
 import os
 import re
-from collections import deque
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .graph import GraphError, topological_sort
+
 
 class PipelineDAG:
+    """DAG for pipeline step ordering.
+
+    Delegates cycle detection and topological sorting to the shared
+    ``graph.topological_sort`` implementation so that behaviour stays
+    consistent across the codebase.
+    """
+
     def __init__(self, nodes: list[str], edges: list[tuple[str, str]]):
         self.nodes = nodes
         self.edges = edges
-        self._graph = self._build_graph()
-
-    def _build_graph(self) -> dict[str, list[str]]:
-        graph: dict[str, list[str]] = {n: [] for n in self.nodes}
-        for src, dst in self.edges:
-            if src not in graph:
-                graph[src] = []
-            if dst not in graph:
-                graph[dst] = []
-            graph[src].append(dst)
-        return graph
 
     def has_cycle(self) -> bool:
-        indeg: dict[str, int] = {n: 0 for n in self._graph}
-        for src in self._graph:
-            for dst in self._graph[src]:
-                indeg[dst] = indeg.get(dst, 0) + 1
-        q = deque([n for n, deg in indeg.items() if deg == 0])
-        seen = 0
-        while q:
-            cur = q.popleft()
-            seen += 1
-            for nxt in self._graph.get(cur, []):
-                indeg[nxt] -= 1
-                if indeg[nxt] == 0:
-                    q.append(nxt)
-        return seen != len(indeg)
+        try:
+            topological_sort(self.nodes, self.edges)
+            return False
+        except GraphError:
+            return True
 
     def topological_order(self) -> list[str] | None:
-        indeg: dict[str, int] = {n: 0 for n in self._graph}
-        for _src, dsts in self._graph.items():
-            for dst in dsts:
-                indeg[dst] = indeg.get(dst, 0) + 1
-        q = deque([n for n, deg in indeg.items() if deg == 0])
-        order: list[str] = []
-        while q:
-            cur = q.popleft()
-            order.append(cur)
-            for nxt in self._graph.get(cur, []):
-                indeg[nxt] -= 1
-                if indeg[nxt] == 0:
-                    q.append(nxt)
-        if len(order) != len(indeg):
+        try:
+            return topological_sort(self.nodes, self.edges)
+        except GraphError:
             return None
-        return order
 
     def execute(self, steps: dict[str, Callable[[dict[str, Any]], Any]]) -> dict[str, Any]:
         order = self.topological_order()
@@ -72,7 +48,14 @@ class PipelineDAG:
         return ctx
 
 
-class SecurityScanner:
+class FileSecurityScanner:
+    """Scan files on disk for forbidden patterns.
+
+    Renamed from ``SecurityScanner`` to avoid confusion with
+    ``security.SecurityScanner`` which operates on (path, content) pairs
+    and returns structured report dicts.
+    """
+
     def __init__(self, forbidden_patterns: Iterable[str] | None = None):
         pats = list(forbidden_patterns or [])
         pats.extend(
@@ -80,22 +63,49 @@ class SecurityScanner:
                 r"(?i)aws_access_key_id",
                 r"(?i)aws_secret_access_key",
                 r"(?i)-----BEGIN (RSA|EC|OPENSSH) PRIVATE KEY-----",
-                r"(?i)password\\s*=",
+                r"(?i)password\s*=",
             ]
         )
         self.patterns = [re.compile(p) for p in pats]
 
-    def scan_file(self, path: Path) -> bool:
+    def scan(self, path: Path, content: str | None = None) -> dict[str, Any]:
+        """Scan the given path/content for forbidden patterns.
+
+        Returns a report dictionary with ``ok``, ``path``, and ``issues`` keys.
+        """
+        issues: list[str] = []
+
         if re.search(r"\.(env|secret)$", path.name):
-            return False
-        try:
-            data = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
-            return False
+            return {"path": str(path), "ok": False, "issues": ["skipped_disallowed_extension"]}
+
+        if content is None:
+            try:
+                content = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                return {"path": str(path), "ok": False, "issues": ["read_error"]}
+
         for pat in self.patterns:
-            if pat.search(data):
-                return False
-        return True
+            if pat.search(content):
+                issues.append(f"matched_pattern:{pat.pattern}")
+
+        return {
+            "path": str(path),
+            "ok": not issues,
+            "issues": issues,
+        }
+
+    def scan_file(self, path: Path) -> bool:
+        """Backwards-compatible wrapper that returns a simple boolean.
+
+        ``True`` indicates the file passed all checks; ``False`` indicates a
+        problem (skipped, read error, or forbidden pattern match).
+        """
+        report = self.scan(path)
+        return bool(report.get("ok"))
+
+
+# Backward-compatible alias so existing imports keep working.
+SecurityScanner = FileSecurityScanner
 
 
 class CIManager:
@@ -149,14 +159,12 @@ class AgentOrchestrator:
     def __init__(
         self,
         dag: PipelineDAG,
-        scanner: SecurityScanner,
+        scanner: FileSecurityScanner,
         governance: GovernanceSystem,
-        ci_manager: CIManager,
     ):
         self.dag = dag
         self.scanner = scanner
         self.governance = governance
-        self.ci_manager = ci_manager
 
     def validate_strategy(self, strategy: str) -> bool:
         if not strategy:
