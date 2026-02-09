@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0.0",
+  "root_anchor": "urn:iao:a:root:v2",
+  "hash": { "algorithm": "sha3-512", "encoding": "base32hex", "display_prefix_bytes": 15 },
+  "items": []
+}

@@ -1,0 +1,15 @@
+apiVersion: iao.io/v1
+kind: GlobalGovernance
+metadata:
+  name: global-governance
+spec:
+  rootAnchorRef: "urn:iao:a:root:v2"
+  policies:
+    - id: naming
+      description: Enforce iao namespace and URN conventions
+      enforced: true
+      ref: "clean-final/unified-charter/naming_short.yaml"
+    - id: replay_required
+      description: Replay must be executed before seals are trusted
+      enforced: true
+      ref: "clean-final/unified-charter/replayspec.v2.yaml"

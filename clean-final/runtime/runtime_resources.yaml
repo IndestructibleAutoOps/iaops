@@ -1,0 +1,23 @@
+apiVersion: iao.io/v1
+kind: RuntimeResources
+metadata:
+  name: runtime-resources
+  urn: "urn:iao:s:runtime-resources:v1"
+spec:
+  version: "1.0.0"
+  resources:
+    - name: compute
+      scope: workload
+      limits:
+        cpu: "4"
+        memory: "8Gi"
+    - name: storage
+      scope: workload
+      limits:
+        iops: 5000
+        throughput: "500MiB/s"
+    - name: network
+      scope: workload
+      limits:
+        bandwidth: "1Gbps"
+        connections: 10000
