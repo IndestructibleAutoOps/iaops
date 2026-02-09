@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from collections import OrderedDict
 
 import yaml
 
@@ -11,7 +14,7 @@ from .adapters.generic import AdapterContext, GenericAdapter, detect_adapter, lo
 from .adapters.go import GoAdapter
 from .adapters.node import NodeAdapter
 from .adapters.python import PythonAdapter
-from .graph import DAG, dag_is_acyclic
+from .graph import DAG, GraphError, dag_is_acyclic, topological_sort
 from .hashing import Hasher
 from .io import ensure_dir, read_text, write_text
 from .normalize import Normalizer
@@ -130,39 +133,77 @@ class Engine:
             return GoAdapter(ctx)
         return GenericAdapter(ctx)
 
-    def run(self) -> dict[str, Any]:
-        trace_id = self.events.new_trace_id()
+    def _get_execution_plan(self, trace_id: str) -> tuple[bool, list[str] | None]:
         dag = DAG.from_nodes(self.cfg.dag_nodes)
         if not dag_is_acyclic(dag):
             self.events.emit(trace_id, "governance", "dag_cycle", {"ok": False})
+            return False, None
+        order = dag.topological_sort()
+        if order is None:
+            self.events.emit(trace_id, "governance", "dag_cycle", {"ok": False})
+            return False, None
+        return True, order
+
+    def _get_step_function(self, step_id: str):
+        step_map = {
+            "interface_metadata_parse": self.step_interface_metadata_parse,
+            "parameter_validation": self.step_parameter_validation,
+            "permission_resolution": self.step_permission_resolution,
+            "security_assessment": self.step_security_assessment,
+            "approval_chain_validation": self.step_approval_chain_validation,
+            "tool_execution": self.step_tool_execution,
+            "history_immutable": self.step_history_immutable,
+            "continuous_monitoring": self.step_continuous_monitoring,
+        }
+        return step_map.get(step_id)
+
+    def run(self) -> dict[str, Any]:
+        trace_id = self.events.new_trace_id()
+        dag_valid, execution_order = self._get_execution_plan(trace_id)
+        if not dag_valid or not execution_order:
             return {"ok": False, "error": "dag_cycle", "traceId": trace_id}
 
-        steps = [
-            ("interface_metadata_parse", self.step_interface_metadata_parse),
-            ("parameter_validation", self.step_parameter_validation),
-            ("permission_resolution", self.step_permission_resolution),
-            ("security_assessment", self.step_security_assessment),
-            ("approval_chain_validation", self.step_approval_chain_validation),
-            ("tool_execution", self.step_tool_execution),
-            ("history_immutable", self.step_history_immutable),
-            ("continuous_monitoring", self.step_continuous_monitoring),
-        ]
+        context: dict[str, Any] = {}
+        outputs: OrderedDict[str, Any] = OrderedDict()
+        outputs["ok"] = True
+        outputs["traceId"] = trace_id
+        outputs["mode"] = self.cfg.mode
+        outputs["steps"] = OrderedDict()
 
-        outputs: dict[str, Any] = {"ok": True, "traceId": trace_id, "mode": self.cfg.mode}
-        for step_id, fn in steps:
-            self.events.emit(trace_id, step_id, "start", {})
-            out = fn(trace_id=trace_id, step_id=step_id)
-            self.events.emit(trace_id, step_id, "end", {"result": out})
-            if not out.get("ok", False):
+        for step_id in execution_order:
+            step_fn = self._get_step_function(step_id)
+            if not step_fn:
+                self.events.emit(trace_id, step_id, "error", {"error": "step_not_implemented"})
                 outputs["ok"] = False
                 outputs["failedStep"] = step_id
-                outputs["error"] = out.get("error", "unknown")
+                outputs["error"] = f"Step function for {step_id} not implemented"
                 break
-            outputs[step_id] = out
+            try:
+                self.events.emit(trace_id, step_id, "start", {})
+                start_time = time.monotonic()
+                result = step_fn(trace_id, step_id, context)
+                elapsed = time.monotonic() - start_time
+                self.events.emit(trace_id, step_id, "end", {"result": result, "elapsed": elapsed})
+                outputs["steps"][step_id] = result
+                context[step_id] = result
+                if not result.get("ok", False):
+                    outputs["ok"] = False
+                    outputs["failedStep"] = step_id
+                    outputs["error"] = result.get("error", "unknown")
+                    break
+            except Exception as e:  # pragma: no cover - defensive
+                self.events.emit(trace_id, step_id, "error", {"error": str(e)})
+                outputs["ok"] = False
+                outputs["failedStep"] = step_id
+                outputs["error"] = str(e)
+                break
 
+        outputs["success"] = outputs["ok"]
         return outputs
 
-    def step_interface_metadata_parse(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_interface_metadata_parse(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         index = self.adapter.index()
         snapshot = self.adapter.snapshot()
         scanner_findings = self.scanner.scan_index(index)
@@ -176,7 +217,9 @@ class Engine:
             "snapshot": snapshot,
         }
 
-    def step_parameter_validation(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_parameter_validation(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         policies_path = self.cfg.resolve_input(self.cfg.inputs["policiesConfig"])
         roles_path = self.cfg.resolve_input(self.cfg.inputs["rolesRegistry"])
         policies = yaml.safe_load(read_text(policies_path))
@@ -189,20 +232,28 @@ class Engine:
 
         return {"ok": True, "policiesLoaded": True, "rolesLoaded": True}
 
-    def step_permission_resolution(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_permission_resolution(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         allow_writes = self.cfg.allow_writes and (self.cfg.mode in {"repair"})
         return {"ok": True, "allowWrites": allow_writes}
 
-    def step_security_assessment(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_security_assessment(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         findings = self.adapter.security_scan()
         if findings.get("blocked"):
             return {"ok": False, "error": "security_blocked", "findings": findings}
         return {"ok": True, "findings": findings}
 
-    def step_approval_chain_validation(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_approval_chain_validation(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         return {"ok": True, "approval": "local-policy-auto"}
 
-    def step_tool_execution(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_tool_execution(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         normalizer = Normalizer(self.cfg.project_root)
         planner = Planner(self.cfg.project_root, self.adapter)
         patcher = Patcher(
@@ -250,7 +301,9 @@ class Engine:
             "verify": verify_report,
         }
 
-    def step_history_immutable(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_history_immutable(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         manifest = self.hasher.hash_tree(
             self.cfg.project_root, exclude_dirs={self.cfg.state_dir.name, ".git"}
         )
@@ -258,7 +311,9 @@ class Engine:
         write_text(hist_path, json.dumps(manifest, indent=2, sort_keys=True))
         return {"ok": True, "hashManifest": str(hist_path), "files": len(manifest["files"])}
 
-    def step_continuous_monitoring(self, trace_id: str, step_id: str) -> dict[str, Any]:
+    def step_continuous_monitoring(
+        self, trace_id: str, step_id: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         if self.cfg.mode in {"seal", "repair", "verify"}:
             sealer = Sealer(
                 self.cfg.project_root,
@@ -271,3 +326,226 @@ class Engine:
                 return {"ok": False, "error": "seal_failed", "seal": seal}
             return {"ok": True, "sealed": seal}
         return {"ok": True, "monitoring": "noop"}
+
+
+class ExecutionContext:
+    """Shared execution context across pipeline steps."""
+
+    def __init__(self):
+        self.data: dict[str, Any] = {}
+
+    def set(self, key: str, value: Any):
+        self.data[key] = value
+
+    def get(self, key: str, default: Any | None = None) -> Any:
+        return self.data.get(key, default)
+
+
+class StepReport:
+    """Step execution report."""
+
+    def __init__(
+        self,
+        step_id: str,
+        status: str,
+        output: Any | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+        error: str | None = None,
+    ):
+        self.step_id = step_id
+        self.status = status
+        self.output = output
+        self.start_time = start_time or time.time()
+        self.end_time = end_time
+        self.error = error
+        self.duration = 0.0
+
+        if start_time and end_time:
+            self.duration = end_time - start_time
+
+
+class StepRecord:
+    """Step execution record for DAG orchestration."""
+
+    def __init__(
+        self,
+        step_id: str,
+        status: str,
+        output: Any | None = None,
+        error: str | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+    ):
+        self.step_id = step_id
+        self.status = status
+        self.output = output
+        self.error = error
+        self.start_time = start_time
+        self.end_time = end_time
+        self.duration = (end_time - start_time) if start_time and end_time else 0
+
+
+class OrchestrationEngine:
+    """Lightweight DAG-based orchestration engine."""
+
+    def __init__(self):
+        self.steps: dict[str, Any] = {}
+        self.dependencies: list[tuple[str, str]] = []
+        self.context = ExecutionContext()
+        self.records: dict[str, StepRecord] = {}
+
+    def register_step(
+        self,
+        step_id: str,
+        func: Any | None = None,
+        requires: Any | None = None,
+        depends_on: Any | None = None,
+    ):
+        """Register a step function; usable as decorator or direct call."""
+        deps = depends_on if requires is None else requires
+
+        def _register(fn: Any):
+            self.steps[step_id] = fn
+            if deps:
+                dep_list = [deps] if isinstance(deps, str) else list(deps)
+                for dep in dep_list:
+                    self.dependencies.append((dep, step_id))
+            return fn
+
+        if func is not None:
+            return _register(func)
+        return _register
+
+    def build_plan(self) -> list[str]:
+        """Return the DAG execution order."""
+        try:
+            return topological_sort(nodes=list(self.steps.keys()), edges=self.dependencies)
+        except GraphError as e:
+            logging.error(f"Pipeline planning failed: {e}")
+            raise
+
+    def run_step(self, step_id: str) -> StepRecord:
+        """Execute a single registered step."""
+        func = self.steps.get(step_id)
+        start_time = time.time()
+
+        if not func:
+            record = StepRecord(
+                step_id=step_id,
+                status="error",
+                error=f"Step '{step_id}' not found",
+                start_time=start_time,
+                end_time=time.time(),
+            )
+            self.records[step_id] = record
+            return record
+
+        try:
+            output = func(self.context)
+            record = StepRecord(
+                step_id=step_id,
+                status="success",
+                output=output,
+                start_time=start_time,
+                end_time=time.time(),
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            record = StepRecord(
+                step_id=step_id,
+                status="error",
+                error=str(e),
+                start_time=start_time,
+                end_time=time.time(),
+            )
+
+        self.records[step_id] = record
+        return record
+
+    def execute(self) -> dict[str, StepRecord]:
+        """Execute all steps following the DAG plan."""
+        self.context = ExecutionContext()
+        self.records = {}
+        plan = self.build_plan()
+        for step_id in plan:
+            record = self.run_step(step_id)
+            if record.status == "error":
+                break
+        return self.records
+
+
+class PipelineEngine:
+    """DAG-driven pipeline execution engine."""
+
+    def __init__(self):
+        self.steps: dict[str, Any] = {}
+        self.dependencies: list[tuple[str, str]] = []
+        self.reports: dict[str, StepReport] = {}
+        self.context = ExecutionContext()
+
+    def register_step(self, step_id: str, func: Any | None = None, depends_on: Any | None = None):
+        """Register a step function; usable as a decorator or direct call."""
+
+        def _register(fn: Any):
+            self.steps[step_id] = fn
+            if depends_on:
+                deps = [depends_on] if isinstance(depends_on, str) else list(depends_on)
+                for dep in deps:
+                    self.dependencies.append((dep, step_id))
+            return fn
+
+        if func is not None:
+            return _register(func)
+        return _register
+
+    def build_execution_plan(self) -> list[str]:
+        """Build a topologically sorted execution plan."""
+        try:
+            return topological_sort(nodes=list(self.steps.keys()), edges=self.dependencies)
+        except GraphError as e:
+            logging.error(f"DAG validation failed: {e}")
+            raise
+
+    def execute_step(self, step_id: str) -> StepReport:
+        """Execute a single step and produce a StepReport."""
+        if step_id not in self.steps:
+            return StepReport(step_id, "error", error=f"Step '{step_id}' not registered")
+
+        func = self.steps[step_id]
+        start_time = time.time()
+
+        try:
+            result = func(self.context)
+            report = StepReport(
+                step_id=step_id,
+                status="success",
+                output=result,
+                start_time=start_time,
+                end_time=time.time(),
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            report = StepReport(
+                step_id=step_id,
+                status="error",
+                error=str(e),
+                start_time=start_time,
+                end_time=time.time(),
+            )
+
+        self.reports[step_id] = report
+        return report
+
+    def run_pipeline(self) -> dict[str, Any]:
+        """Execute the pipeline following the DAG order."""
+        execution_plan = self.build_execution_plan()
+        final_report: dict[str, Any] = {}
+
+        for step_id in execution_plan:
+            report = self.execute_step(step_id)
+            final_report[step_id] = report.__dict__
+
+            if report.status == "error":
+                logging.error(f"Step '{step_id}' failed: {report.error}")
+                break
+
+        return final_report

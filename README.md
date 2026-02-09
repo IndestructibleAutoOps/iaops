@@ -27,7 +27,7 @@ How to run
 - Clean engine state: `python -m indestructibleautoops clean`
 
 Implemented and usable today
------------------------------
+----------------------------
 - Config validation: Pipeline YAML is validated against `schemas/pipeline.schema.json`; role and policy files are schema-checked before use.
 - Adapter auto-detect: Chooses python/node/go/generic based on present files in the project and required-files checks for that adapter (`src/indestructibleautoops/adapters`).
 - File indexing and basic gatekeeping: Walks all files, blocks if file paths match configured narrative/question regexes (`scanner.py`).
@@ -38,35 +38,10 @@ Implemented and usable today
 - Hashing and sealing: Produces SHA3-512/BLAKE3 manifests for the project (excluding `.git` and state dir) and writes evidence links (`hashing.py`, `sealing.py`).
 - Event logging: Emits JSONL events validated by `schemas/event.schema.json` to the configured path for each step (`observability.py`).
 
-Orchestration and DAG Execution
--------------------------------
-- DAG-driven step execution: The main Engine.run() method executes steps in topological order based on the configured DAG dependencies.
-- PipelineDAG: A complete DAG implementation with cycle detection, topological sorting, and execution context management (`orchestration.py`).
-- Shared topological sort utilities: Common DAG algorithms available via `graph.py` for use across the codebase.
-- OrchestrationEngine: Lightweight DAG-based orchestration engine with step registration and execution tracking (`engine.py`).
-- PipelineEngine: Alternative DAG-driven pipeline execution with step reporting (`engine.py`).
-
-Security and Governance
------------------------
-- SecurityScanner: Structured security scanner that inspects file paths and content for sensitive data patterns including:
-  - Secret detection: API keys, tokens, passwords, auth strings
-  - Risk patterns: XSS vulnerabilities, SQL injection attempts, path traversal attempts
-  - Filename blocking: Blocks files with extensions like .env, .key, .pem, .secret
-  - Content hashing: SHA256 hashes for content integrity verification
-- NarrativeSecretScanner: File path-based scanner that blocks files matching narrative and question patterns (`scanner.py`).
-- GovernanceSystem: Approval and monitoring system with strategy validation and continuous monitoring capabilities (`orchestration.py`).
-
-CI and Dependencies Management
-------------------------------
-- CIManager: CI template management with the ability to apply CI workflow templates and update dependencies (`orchestration.py`).
-- Template application: Generates minimal CI workflow templates in `.indestructibleautoops/ci/` directory.
-- Dependency updates: Supports dependency logging when ALLOW_UPDATES environment variable is set.
-
-Multi-Agent Orchestration
---------------------------
-- AgentOrchestrator: Orchestrates multiple agents following DAG order with:
-  - Strategy validation
-  - Governance approval workflow
-  - Security scanning integration
-  - CI manager integration
-  - Context propagation between agents
+Placeholders / fictional capabilities (not implemented)
+-------------------------------------------------------
+- No real multi-agent orchestration or policy execution despite the role/policy configs; they are only schema-validated and not enforced beyond simple checks.
+- No vulnerability/secret/content scanning beyond filename regex matches; `security_scan` is a stub that always passes.
+- No actual CI templates or dependency updates are applied; patching only writes minimal placeholder files when allowed.
+- DAG in the config is only checked for cycles; step execution order is hard-coded, not driven by the DAG.
+- Approval chains, continuous monitoring, and governance beyond hash/seal recording are placeholders with fixed responses.
