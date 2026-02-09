@@ -195,20 +195,25 @@ def test_file_count_regression():
     print("  ✓ Baseline created")
     print()
 
-    # Second run - check (should pass)
+    # Second run - check (should pass for the RegressionValidator)
     print("STEP 2: Running validation (should pass)...")
     validator.load_baseline()
     results2 = validator.validate_all()
 
-    blocking_issues = results2["summary"]["blocking_issues"]
+    # Check only the RegressionValidator — MetricsValidator may report
+    # transient issues due to generated files (.baselines/, .validation/)
+    reg_result = results2["validators"].get("RegressionValidator", {})
+    reg_blocking = [i for i in reg_result.get("issues", []) if i.get("blocking", False)]
 
-    if blocking_issues == 0:
-        print("  ✓ No regressions detected (as expected)")
+    if len(reg_blocking) == 0:
+        print("  ✓ No regressions detected in RegressionValidator (as expected)")
         print()
         print("✅ FILE COUNT REGRESSION TEST PASSED")
         assert True
     else:
-        print("  ⚠️  Unexpected blocking issues")
+        print("  ⚠️  Unexpected blocking issues in RegressionValidator")
+        for issue in reg_blocking:
+            print(f"    [{issue['severity']}] {issue['issue_id']}: {issue['title']}")
         raise AssertionError("Unexpected blocking issues in file count test")
 
 
