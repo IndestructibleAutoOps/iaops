@@ -249,6 +249,190 @@ class TestWhitelistManager:
         assert "audit1" in report
 
 
+# ── WhitelistManager.apply_whitelist batch tests ────────────────────────
+
+
+class TestApplyWhitelist:
+    def test_batch_suppression(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="suppress_perf",
+                pattern="perf_.*",
+                reason="known CI variance",
+                approved_by="lead",
+                max_severity="critical",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="perf_api",
+                severity=Severity.CRITICAL,
+                category="performance",
+                title="API regression",
+                description="API latency increased",
+            ),
+            ValidationIssue(
+                issue_id="file_missing",
+                severity=Severity.ERROR,
+                category="file_integrity",
+                title="File missing",
+                description="Required file missing",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 1
+        assert len(processed) == 2
+        # perf_api should be suppressed to INFO
+        perf_issue = next(i for i in processed if i.issue_id == "perf_api")
+        assert perf_issue.severity == Severity.INFO
+        assert "[SUPPRESSED" in perf_issue.description
+        # file_missing should be unchanged
+        file_issue = next(i for i in processed if i.issue_id == "file_missing")
+        assert file_issue.severity == Severity.ERROR
+
+    def test_blocker_never_suppressed_batch(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="catch_all",
+                pattern=".*",
+                reason="try everything",
+                approved_by="x",
+                max_severity="critical",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="structural_change",
+                severity=Severity.BLOCKER,
+                category="regression",
+                title="Structure changed",
+                description="Keys removed",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 0
+        assert processed[0].severity == Severity.BLOCKER
+
+    def test_expired_rule_not_applied(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="expired_rule",
+                pattern=".*",
+                reason="old rule",
+                approved_by="x",
+                expires_at=time.time() - 100,
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="some_issue",
+                severity=Severity.ERROR,
+                category="test",
+                title="Some issue",
+                description="desc",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 0
+        assert processed[0].severity == Severity.ERROR
+
+    def test_severity_gate_respected(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="low_only",
+                pattern=".*",
+                reason="low sev only",
+                approved_by="x",
+                max_severity="warning",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="critical_issue",
+                severity=Severity.CRITICAL,
+                category="test",
+                title="Critical",
+                description="critical desc",
+            ),
+            ValidationIssue(
+                issue_id="warning_issue",
+                severity=Severity.WARNING,
+                category="test",
+                title="Warning",
+                description="warning desc",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 1  # only warning suppressed
+        crit = next(i for i in processed if i.issue_id == "critical_issue")
+        assert crit.severity == Severity.CRITICAL
+        warn = next(i for i in processed if i.issue_id == "warning_issue")
+        assert warn.severity == Severity.INFO
+
+    def test_audit_log_updated(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="audit_test",
+                pattern="perf_.*",
+                reason="test",
+                approved_by="x",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="perf_db",
+                severity=Severity.ERROR,
+                category="performance",
+                title="DB perf",
+                description="desc",
+            ),
+        ]
+
+        mgr.apply_whitelist(issues)
+        rule = mgr.get_rule("audit_test")
+        assert len(rule.audit_log) == 1
+        assert rule.audit_log[0]["issue_id"] == "perf_db"
+
+
 # ── Integration with StrictValidator ─────────────────────────────────
 
 

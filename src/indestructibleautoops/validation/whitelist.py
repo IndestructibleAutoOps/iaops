@@ -251,6 +251,74 @@ class WhitelistManager:
 
         return False, None
 
+    def apply_whitelist(
+        self,
+        issues: list[Any],
+    ) -> tuple[list[Any], int]:
+        """Apply whitelist rules to a list of ValidationIssues.
+
+        Suppressed issues are downgraded to INFO severity and annotated
+        with the matching rule ID.  BLOCKER issues are never suppressed.
+
+        Returns:
+            ``(processed_issues, suppressed_count)``
+        """
+        from .validator import Severity
+
+        processed: list[Any] = []
+        suppressed_count = 0
+
+        for issue in issues:
+            # BLOCKER issues are never suppressed
+            if issue.severity.value == Severity.BLOCKER.value:
+                processed.append(issue)
+                continue
+
+            matched = False
+            for rule in self._rules:
+                if not rule.is_active():
+                    continue
+
+                if not rule.matches_issue(
+                    issue.issue_id,
+                    category=issue.category,
+                    file_path=getattr(issue, "file_path", None),
+                ):
+                    continue
+
+                # Severity gate
+                if _severity_rank(issue.severity.value) > _severity_rank(rule.max_severity):
+                    continue
+
+                # Match — record audit and downgrade
+                rule.record_match(issue.issue_id)
+                self._suppressed_count += 1
+                self._match_history.append(
+                    {
+                        "issue_id": issue.issue_id,
+                        "severity": issue.severity.value,
+                        "rule_id": rule.rule_id,
+                        "timestamp": time.time(),
+                    }
+                )
+
+                issue.severity = Severity.INFO
+                issue.description = f"[SUPPRESSED by rule '{rule.rule_id}'] {issue.description}"
+                if hasattr(issue, "metrics"):
+                    issue.metrics["suppressed"] = True
+                    issue.metrics["suppressed_by_rule"] = rule.rule_id
+                    issue.metrics["suppression_reason"] = rule.reason
+
+                processed.append(issue)
+                suppressed_count += 1
+                matched = True
+                break
+
+            if not matched:
+                processed.append(issue)
+
+        return processed, suppressed_count
+
     # ── persistence ──────────────────────────────────────────────────
 
     def save(self, path: Path | str) -> None:

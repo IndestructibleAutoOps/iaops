@@ -3,6 +3,13 @@ Enterprise Strict Engineering Validator — Master Validator.
 
 Integrates all validation components with strict regression prevention
 and false-positive suppression via the whitelist system.
+
+DEFAULT_VALIDATORS:
+  - FileCheckValidator   (source file integrity)
+  - FunctionalValidator  (structural regression detection)
+  - PerformanceValidator (latency regression detection)
+  - RegressionValidator  (functional regression suites)
+  - MetricsValidator     (advanced metrics + progressive blocking)
 """
 
 from __future__ import annotations
@@ -13,7 +20,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .file_validator import FileCheckValidator
+from .functional_validator import FunctionalTest, FunctionalValidator
 from .metrics import MetricsValidator, get_default_thresholds
+from .performance_validator import PerformanceValidator
 from .regression import RegressionSuite, RegressionTest, RegressionValidator
 from .validator import BaseValidator, Severity, ValidationResult
 from .whitelist import WhitelistManager
@@ -31,7 +41,8 @@ class StrictValidationConfig:
     fail_on_regression: bool = True
     fail_on_security: bool = True
     fail_on_quality: bool = True
-    performance_regression_threshold: float = 0.1  # 10%
+    performance_threshold: float = 0.20  # 20% performance deviation threshold
+    metric_threshold: float = 0.10  # 10% metric deviation threshold
 
 
 class StrictValidator:
@@ -39,7 +50,22 @@ class StrictValidator:
 
     Orchestrates multiple validators, applies whitelist suppression,
     and produces a single consolidated report.
+
+    DEFAULT_VALIDATORS are automatically registered:
+      - FileCheckValidator
+      - FunctionalValidator
+      - PerformanceValidator
+      - RegressionValidator
+      - MetricsValidator
     """
+
+    DEFAULT_VALIDATORS: list[type[BaseValidator]] = [
+        FileCheckValidator,
+        FunctionalValidator,
+        PerformanceValidator,
+        RegressionValidator,
+        MetricsValidator,
+    ]
 
     def __init__(self, config: StrictValidationConfig) -> None:
         self.config = config
@@ -53,10 +79,30 @@ class StrictValidator:
         # Initialize built-in validators
         self._init_validators()
 
-    # ── initialisation helpers ───────────────────────────────────────
+    # ── initialisation helpers ───────────────────────────────────────────
 
     def _init_validators(self) -> None:
-        """Initialize all validators."""
+        """Initialize all default validators with config-driven thresholds."""
+        # File check validator
+        self.file_validator = FileCheckValidator(
+            strict_mode=self.config.strict_mode,
+        )
+        self._validators.append(self.file_validator)
+
+        # Functional validator (structural regression detection)
+        self.functional_validator = FunctionalValidator(
+            strict_mode=self.config.strict_mode,
+            metric_threshold=self.config.metric_threshold,
+        )
+        self._validators.append(self.functional_validator)
+
+        # Performance validator
+        self.performance_validator = PerformanceValidator(
+            strict_mode=self.config.strict_mode,
+            performance_threshold=self.config.performance_threshold,
+        )
+        self._validators.append(self.performance_validator)
+
         # Regression validator
         self.regression_validator = RegressionValidator(
             strict_mode=self.config.strict_mode,
@@ -81,16 +127,25 @@ class StrictValidator:
             return WhitelistManager.load_yaml(path)
         return WhitelistManager.load(path)
 
-    # ── public API ───────────────────────────────────────────────────
+    # ── public API ───────────────────────────────────────────────────────
 
     @property
     def whitelist(self) -> WhitelistManager:
         """Expose the whitelist manager for external rule management."""
         return self._whitelist
 
+    @property
+    def validators(self) -> list[BaseValidator]:
+        """Return the list of registered validators."""
+        return list(self._validators)
+
     def add_regression_suite(self, suite: RegressionSuite) -> None:
         """Add a regression test suite."""
         self.regression_validator.add_suite(suite)
+
+    def add_functional_test(self, test: FunctionalTest) -> None:
+        """Add a functional test."""
+        self.functional_validator.add_test(test)
 
     def validate_all(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
         """Run all validations with whitelist suppression.
@@ -160,7 +215,7 @@ class StrictValidator:
 
         return results
 
-    # ── whitelist integration ────────────────────────────────────────
+    # ── whitelist integration ────────────────────────────────────────────
 
     def _apply_whitelist(self, result: ValidationResult) -> int:
         """Apply whitelist rules to a validation result.
@@ -204,7 +259,7 @@ class StrictValidator:
 
         return suppressed
 
-    # ── baseline management ──────────────────────────────────────────
+    # ── baseline management ──────────────────────────────────────────────
 
     def create_baseline(self, context: dict[str, Any] | None = None) -> None:
         """Create baseline metrics for all validators."""
@@ -227,7 +282,7 @@ class StrictValidator:
             if baseline_path.exists():
                 validator.load_baseline(baseline_path)
 
-    # ── persistence ──────────────────────────────────────────────────
+    # ── persistence ──────────────────────────────────────────────────────
 
     def _save_results(self, results: dict[str, Any]) -> None:
         """Save validation results."""
@@ -243,7 +298,7 @@ class StrictValidator:
         with open(latest_file, "w") as f:
             json.dump(results, f, indent=2, ensure_ascii=False)
 
-    # ── reporting ────────────────────────────────────────────────────
+    # ── reporting ────────────────────────────────────────────────────────
 
     def print_summary(self, results: dict[str, Any]) -> None:
         """Print validation summary."""
@@ -322,7 +377,7 @@ class StrictValidator:
         return blocking
 
 
-# ── convenience functions ────────────────────────────────────────────
+# ── convenience functions ────────────────────────────────────────────────────
 
 
 def create_default_tests() -> list[RegressionTest]:
@@ -424,12 +479,16 @@ def run_strict_validation(
     create_baseline: bool = False,
     load_baseline: bool = False,
     whitelist_path: str | None = None,
+    performance_threshold: float = 0.20,
+    metric_threshold: float = 0.10,
 ) -> dict[str, Any]:
     """Run strict validation with default tests."""
     config = StrictValidationConfig(
         project_root=project_root,
         strict_mode=True,
         whitelist_path=whitelist_path,
+        performance_threshold=performance_threshold,
+        metric_threshold=metric_threshold,
     )
 
     validator = StrictValidator(config)

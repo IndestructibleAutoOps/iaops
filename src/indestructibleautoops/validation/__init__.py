@@ -8,6 +8,7 @@ with false-positive suppression via a whitelist mechanism.
 
 from .engine import ValidationEngine
 from .file_validator import FileCheckValidator
+from .functional_validator import FunctionalTest, FunctionalValidator
 from .metrics import (
     BlockingPolicy,
     MetricResult,
@@ -49,6 +50,9 @@ __all__ = [
     "detect_structural_regression",
     # File validator
     "FileCheckValidator",
+    # Functional validator
+    "FunctionalValidator",
+    "FunctionalTest",
     # Performance validator
     "PerformanceValidator",
     "PerformanceTest",
