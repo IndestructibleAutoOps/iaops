@@ -365,6 +365,115 @@ class StepReport:
             self.duration = end_time - start_time
 
 
+class StepRecord:
+    """Step execution record for DAG orchestration."""
+
+    def __init__(
+        self,
+        step_id: str,
+        status: str,
+        output: Any | None = None,
+        error: str | None = None,
+        start_time: float | None = None,
+        end_time: float | None = None,
+    ):
+        self.step_id = step_id
+        self.status = status
+        self.output = output
+        self.error = error
+        self.start_time = start_time
+        self.end_time = end_time
+        self.duration = (end_time - start_time) if start_time and end_time else 0
+
+
+class OrchestrationEngine:
+    """Lightweight DAG-based orchestration engine."""
+
+    def __init__(self):
+        self.steps: dict[str, Any] = {}
+        self.dependencies: list[tuple[str, str]] = []
+        self.context = ExecutionContext()
+        self.records: dict[str, StepRecord] = {}
+
+    def register_step(
+        self,
+        step_id: str,
+        func: Any | None = None,
+        requires: Any | None = None,
+        depends_on: Any | None = None,
+    ):
+        """Register a step function; usable as decorator or direct call."""
+        deps = depends_on if requires is None else requires
+
+        def _register(fn: Any):
+            self.steps[step_id] = fn
+            if deps:
+                dep_list = [deps] if isinstance(deps, str) else list(deps)
+                for dep in dep_list:
+                    self.dependencies.append((dep, step_id))
+            return fn
+
+        if func is not None:
+            return _register(func)
+        return _register
+
+    def build_plan(self) -> list[str]:
+        """Return the DAG execution order."""
+        try:
+            return topological_sort(nodes=list(self.steps.keys()), edges=self.dependencies)
+        except GraphError as e:
+            logging.error(f"Pipeline planning failed: {e}")
+            raise
+
+    def run_step(self, step_id: str) -> StepRecord:
+        """Execute a single registered step."""
+        func = self.steps.get(step_id)
+        start_time = time.time()
+
+        if not func:
+            record = StepRecord(
+                step_id=step_id,
+                status="error",
+                error=f"Step '{step_id}' not found",
+                start_time=start_time,
+                end_time=time.time(),
+            )
+            self.records[step_id] = record
+            return record
+
+        try:
+            output = func(self.context)
+            record = StepRecord(
+                step_id=step_id,
+                status="success",
+                output=output,
+                start_time=start_time,
+                end_time=time.time(),
+            )
+        except Exception as e:  # pragma: no cover - defensive
+            record = StepRecord(
+                step_id=step_id,
+                status="error",
+                error=str(e),
+                start_time=start_time,
+                end_time=time.time(),
+            )
+
+        self.records[step_id] = record
+        return record
+
+    def execute(self) -> dict[str, StepRecord]:
+        """Execute all steps following the DAG plan."""
+        self.context = ExecutionContext()
+        self.records = {}
+        plan = self.build_plan()
+        for step_id in plan:
+            record = self.run_step(step_id)
+            if record.status == "error":
+                break
+        return self.records
+
+
 class PipelineEngine:
     """DAG-driven pipeline execution engine."""
 

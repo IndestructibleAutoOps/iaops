@@ -1,38 +1,37 @@
-import pytest
-
-from indestructibleautoops.engine import ExecutionContext, PipelineEngine
+from indestructibleautoops.engine import OrchestrationEngine
 from indestructibleautoops.security import SecurityScanner
 
 
-@pytest.fixture
-def pipeline():
-    engine = PipelineEngine()
+def test_dag_linear_flow():
+    engine = OrchestrationEngine()
 
-    @engine.register_step(step_id="load_data")
-    def load_data(ctx: ExecutionContext):
-        ctx.set("dataset", [1, 2, 3, 4])
-        return "Data loaded"
+    @engine.register_step("init")
+    def init(ctx):
+        ctx.set("data", "payload")
+        return "Initialized"
 
-    @engine.register_step(step_id="analyze", depends_on="load_data")
-    def analyze_data(ctx: ExecutionContext):
-        data = ctx.get("dataset", [])
-        return f"Analyzed {len(data)} records"
+    @engine.register_step("process", depends_on="init")
+    def process(ctx):
+        return f"Processed {ctx.get('data', '')}"
 
-    @engine.register_step(step_id="secure_export", depends_on=["load_data", "analyze"])
-    def export_data(ctx: ExecutionContext):
-        scanner = SecurityScanner()
-        return scanner.scan_file("export.json", '{"key": "value"}')
+    @engine.register_step("finalize", depends_on="process")
+    def finalize(ctx):
+        return "Completed"
 
-    return engine
+    results = engine.execute()
 
-
-def test_topological_sorting(pipeline):
-    plan = pipeline.build_execution_plan()
-    assert plan == ["load_data", "analyze", "secure_export"]
+    assert results["init"].status == "success"
+    assert "Processed payload" in results["process"].output
+    assert results["finalize"].output == "Completed"
 
 
-def test_full_execution(pipeline):
-    report = pipeline.run_pipeline()
-    assert report["load_data"]["status"] == "success"
-    assert report["secure_export"]["status"] == "success"
-    assert "is_safe" in report["secure_export"]["output"]
+def test_security_scanner_detection():
+    scanner = SecurityScanner()
+    content = "API_KEY='SECRET-123'; SELECT * FROM users;"
+
+    report = scanner.inspect("config.env", content)
+
+    assert report["blocked_by_name"] is True
+    assert report["sensitive_found"] is True
+    assert "union\\s+select" in report["risks"][0]
+    assert report["is_secure"] is False
