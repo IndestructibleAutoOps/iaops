@@ -1,0 +1,587 @@
+"""Tests for the whitelist / exemption system."""
+
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import pytest
+
+from indestructibleautoops.validation.whitelist import (
+    ExemptionStatus,
+    WhitelistManager,
+    WhitelistRule,
+)
+
+# ── WhitelistRule unit tests ─────────────────────────────────────────
+
+
+class TestWhitelistRule:
+    def test_basic_match(self):
+        rule = WhitelistRule(
+            rule_id="r1",
+            pattern="regression_.*",
+            reason="test",
+            approved_by="tester",
+        )
+        assert rule.matches_issue("regression_perf")
+        assert not rule.matches_issue("threshold_min")
+
+    def test_category_filter(self):
+        rule = WhitelistRule(
+            rule_id="r2",
+            pattern=".*",
+            reason="test",
+            approved_by="tester",
+            category="performance",
+        )
+        assert rule.matches_issue("any_issue", category="performance")
+        assert not rule.matches_issue("any_issue", category="regression")
+        # No category on issue → match (category filter only rejects mismatches)
+        assert rule.matches_issue("any_issue", category=None)
+
+    def test_file_pattern_filter(self):
+        rule = WhitelistRule(
+            rule_id="r3",
+            pattern=".*",
+            reason="test",
+            approved_by="tester",
+            file_pattern=r"src/.*\.py",
+        )
+        assert rule.matches_issue("x", file_path="src/main.py")
+        assert not rule.matches_issue("x", file_path="docs/readme.md")
+
+    def test_expired_rule(self):
+        rule = WhitelistRule(
+            rule_id="r4",
+            pattern=".*",
+            reason="test",
+            approved_by="tester",
+            expires_at=time.time() - 100,  # already expired
+        )
+        assert not rule.is_active()
+        assert not rule.matches_issue("anything")
+        assert rule.status == ExemptionStatus.EXPIRED
+
+    def test_revoked_rule(self):
+        rule = WhitelistRule(
+            rule_id="r5",
+            pattern=".*",
+            reason="test",
+            approved_by="tester",
+            status=ExemptionStatus.REVOKED,
+        )
+        assert not rule.is_active()
+        assert not rule.matches_issue("anything")
+
+    def test_pending_review_rule(self):
+        rule = WhitelistRule(
+            rule_id="r6",
+            pattern=".*",
+            reason="test",
+            approved_by="",
+            status=ExemptionStatus.PENDING_REVIEW,
+        )
+        assert not rule.is_active()
+        assert not rule.matches_issue("anything")
+
+    def test_audit_log(self):
+        rule = WhitelistRule(
+            rule_id="r7",
+            pattern="perf_.*",
+            reason="test",
+            approved_by="tester",
+        )
+        rule.record_match("perf_api")
+        rule.record_match("perf_db")
+        assert len(rule.audit_log) == 2
+        assert rule.audit_log[0]["issue_id"] == "perf_api"
+
+    def test_serialisation_roundtrip(self):
+        rule = WhitelistRule(
+            rule_id="r8",
+            pattern="test_.*",
+            reason="roundtrip test",
+            approved_by="tester",
+            expires_at=time.time() + 3600,
+            category="regression",
+            file_pattern=r"src/.*",
+            max_severity="critical",
+        )
+        data = rule.to_dict()
+        restored = WhitelistRule.from_dict(data)
+        assert restored.rule_id == rule.rule_id
+        assert restored.pattern == rule.pattern
+        assert restored.category == rule.category
+        assert restored.max_severity == rule.max_severity
+
+
+# ── WhitelistManager unit tests ──────────────────────────────────────
+
+
+class TestWhitelistManager:
+    def test_add_and_lookup(self):
+        mgr = WhitelistManager()
+        rule = WhitelistRule(rule_id="m1", pattern=".*", reason="t", approved_by="x")
+        mgr.add_rule(rule)
+        assert mgr.get_rule("m1") is rule
+        assert len(mgr.get_active_rules()) == 1
+
+    def test_duplicate_rule_rejected(self):
+        mgr = WhitelistManager()
+        rule = WhitelistRule(rule_id="dup", pattern=".*", reason="t", approved_by="x")
+        mgr.add_rule(rule)
+        with pytest.raises(ValueError, match="Duplicate"):
+            mgr.add_rule(rule)
+
+    def test_remove_rule(self):
+        mgr = WhitelistManager()
+        rule = WhitelistRule(rule_id="rm1", pattern=".*", reason="t", approved_by="x")
+        mgr.add_rule(rule)
+        assert mgr.remove_rule("rm1")
+        assert rule.status == ExemptionStatus.REVOKED
+        assert len(mgr.get_active_rules()) == 0
+
+    def test_blocker_never_suppressed(self):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="catch_all",
+                pattern=".*",
+                reason="catch all",
+                approved_by="x",
+                max_severity="critical",
+            )
+        )
+        suppressed, _ = mgr.should_suppress("any_issue", severity="blocker")
+        assert not suppressed
+
+    def test_severity_gate(self):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="low_only",
+                pattern=".*",
+                reason="low sev only",
+                approved_by="x",
+                max_severity="warning",
+            )
+        )
+        # warning → suppressed
+        suppressed, _ = mgr.should_suppress("issue1", severity="warning")
+        assert suppressed
+        # error → NOT suppressed (above max_severity)
+        suppressed, _ = mgr.should_suppress("issue2", severity="error")
+        assert not suppressed
+
+    def test_suppression_tracking(self):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="track",
+                pattern="perf_.*",
+                reason="t",
+                approved_by="x",
+            )
+        )
+        mgr.should_suppress("perf_api", severity="error")
+        mgr.should_suppress("perf_db", severity="warning")
+        mgr.should_suppress("other_issue", severity="error")  # no match
+
+        stats = mgr.get_stats()
+        assert stats["total_suppressions"] == 2
+        assert len(stats["match_history"]) == 2
+
+    def test_persistence_roundtrip(self, tmp_path: Path):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="persist1",
+                pattern="test_.*",
+                reason="persist test",
+                approved_by="tester",
+            )
+        )
+        mgr.should_suppress("test_issue", severity="error")
+
+        save_path = tmp_path / "whitelist.json"
+        mgr.save(save_path)
+
+        loaded = WhitelistManager.load(save_path)
+        assert len(loaded.get_active_rules()) == 1
+        assert loaded.get_rule("persist1") is not None
+        assert len(loaded.get_rule("persist1").audit_log) == 1
+
+    def test_load_nonexistent_returns_empty(self, tmp_path: Path):
+        mgr = WhitelistManager.load(tmp_path / "nonexistent.json")
+        assert len(mgr.get_active_rules()) == 0
+
+    def test_expired_rules_detected(self):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="exp1",
+                pattern=".*",
+                reason="t",
+                approved_by="x",
+                expires_at=time.time() - 1,
+            )
+        )
+        expired = mgr.get_expired_rules()
+        assert len(expired) == 1
+        assert expired[0].rule_id == "exp1"
+
+    def test_audit_report(self):
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="audit1",
+                pattern="perf_.*",
+                reason="flaky perf",
+                approved_by="lead",
+            )
+        )
+        mgr.should_suppress("perf_api", severity="error")
+        report = mgr.get_audit_report()
+        assert "WHITELIST AUDIT REPORT" in report
+        assert "perf_api" in report
+        assert "audit1" in report
+
+
+# ── WhitelistManager.apply_whitelist batch tests ────────────────────────
+
+
+class TestApplyWhitelist:
+    def test_batch_suppression(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="suppress_perf",
+                pattern="perf_.*",
+                reason="known CI variance",
+                approved_by="lead",
+                max_severity="critical",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="perf_api",
+                severity=Severity.CRITICAL,
+                category="performance",
+                title="API regression",
+                description="API latency increased",
+            ),
+            ValidationIssue(
+                issue_id="file_missing",
+                severity=Severity.ERROR,
+                category="file_integrity",
+                title="File missing",
+                description="Required file missing",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 1
+        assert len(processed) == 2
+        # perf_api should be suppressed to INFO
+        perf_issue = next(i for i in processed if i.issue_id == "perf_api")
+        assert perf_issue.severity == Severity.INFO
+        assert "[SUPPRESSED" in perf_issue.description
+        # file_missing should be unchanged
+        file_issue = next(i for i in processed if i.issue_id == "file_missing")
+        assert file_issue.severity == Severity.ERROR
+
+    def test_blocker_never_suppressed_batch(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="catch_all",
+                pattern=".*",
+                reason="try everything",
+                approved_by="x",
+                max_severity="critical",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="structural_change",
+                severity=Severity.BLOCKER,
+                category="regression",
+                title="Structure changed",
+                description="Keys removed",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 0
+        assert processed[0].severity == Severity.BLOCKER
+
+    def test_expired_rule_not_applied(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="expired_rule",
+                pattern=".*",
+                reason="old rule",
+                approved_by="x",
+                expires_at=time.time() - 100,
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="some_issue",
+                severity=Severity.ERROR,
+                category="test",
+                title="Some issue",
+                description="desc",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 0
+        assert processed[0].severity == Severity.ERROR
+
+    def test_severity_gate_respected(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="low_only",
+                pattern=".*",
+                reason="low sev only",
+                approved_by="x",
+                max_severity="warning",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="critical_issue",
+                severity=Severity.CRITICAL,
+                category="test",
+                title="Critical",
+                description="critical desc",
+            ),
+            ValidationIssue(
+                issue_id="warning_issue",
+                severity=Severity.WARNING,
+                category="test",
+                title="Warning",
+                description="warning desc",
+            ),
+        ]
+
+        processed, count = mgr.apply_whitelist(issues)
+        assert count == 1  # only warning suppressed
+        crit = next(i for i in processed if i.issue_id == "critical_issue")
+        assert crit.severity == Severity.CRITICAL
+        warn = next(i for i in processed if i.issue_id == "warning_issue")
+        assert warn.severity == Severity.INFO
+
+    def test_audit_log_updated(self):
+        from indestructibleautoops.validation.validator import (
+            Severity,
+            ValidationIssue,
+        )
+
+        mgr = WhitelistManager()
+        mgr.add_rule(
+            WhitelistRule(
+                rule_id="audit_test",
+                pattern="perf_.*",
+                reason="test",
+                approved_by="x",
+            )
+        )
+
+        issues = [
+            ValidationIssue(
+                issue_id="perf_db",
+                severity=Severity.ERROR,
+                category="performance",
+                title="DB perf",
+                description="desc",
+            ),
+        ]
+
+        mgr.apply_whitelist(issues)
+        rule = mgr.get_rule("audit_test")
+        assert len(rule.audit_log) == 1
+        assert rule.audit_log[0]["issue_id"] == "perf_db"
+
+
+# ── Integration with StrictValidator ─────────────────────────────────
+
+
+class TestWhitelistIntegration:
+    def test_whitelist_suppresses_regression(self, tmp_path: Path):
+        """End-to-end: a whitelisted regression is downgraded to INFO."""
+        from indestructibleautoops.validation.regression import (
+            RegressionSuite,
+            RegressionTest,
+        )
+        from indestructibleautoops.validation.strict_validator import (
+            StrictValidationConfig,
+            StrictValidator,
+        )
+
+        # Create whitelist file — suppress both metric and perf regressions
+        wl_path = tmp_path / "whitelist.json"
+        wl_data = {
+            "version": 1,
+            "rules": [
+                {
+                    "rule_id": "allow_perf_drop",
+                    "pattern": "(metric_regression|perf_regression)_.*",
+                    "reason": "Known CI variance in test metrics",
+                    "approved_by": "tech-lead",
+                    "max_severity": "critical",
+                    "status": "active",
+                }
+            ],
+        }
+        wl_path.write_text(json.dumps(wl_data))
+
+        config = StrictValidationConfig(
+            project_root=str(tmp_path),
+            baseline_dir=str(tmp_path / ".baselines"),
+            output_dir=str(tmp_path / ".validation"),
+            whitelist_path=str(wl_path),
+            strict_mode=True,
+        )
+        validator = StrictValidator(config)
+
+        call_count = 0
+
+        def metric_test(context):
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                return {"performance_metric": 70}  # regression
+            return {"performance_metric": 100}
+
+        suite = RegressionSuite(
+            suite_id="wl_test",
+            name="Whitelist Test Suite",
+            tests=[
+                RegressionTest(
+                    test_id="wl_perf",
+                    name="WL Perf Test",
+                    description="test",
+                    test_function=metric_test,
+                    category="regression",
+                )
+            ],
+        )
+        validator.add_regression_suite(suite)
+
+        # First run → baseline
+        validator.validate_all()
+        validator.create_baseline()
+
+        # Second run → regression, but whitelisted
+        validator.load_baseline()
+        results = validator.validate_all()
+
+        # The regression should be suppressed → overall pass
+        assert results["overall_passed"], (
+            f"Expected pass after whitelist suppression, "
+            f"got blocking={results['summary']['blocking_issues']}"
+        )
+        assert results["summary"]["suppressed_issues"] > 0
+
+    def test_blocker_not_suppressed_by_whitelist(self, tmp_path: Path):
+        """BLOCKER issues (result mismatches) must never be suppressed."""
+        from indestructibleautoops.validation.regression import (
+            RegressionSuite,
+            RegressionTest,
+        )
+        from indestructibleautoops.validation.strict_validator import (
+            StrictValidationConfig,
+            StrictValidator,
+        )
+
+        wl_path = tmp_path / "whitelist.json"
+        wl_data = {
+            "version": 1,
+            "rules": [
+                {
+                    "rule_id": "catch_all",
+                    "pattern": ".*",
+                    "reason": "try to suppress everything",
+                    "approved_by": "x",
+                    "max_severity": "critical",
+                    "status": "active",
+                }
+            ],
+        }
+        wl_path.write_text(json.dumps(wl_data))
+
+        config = StrictValidationConfig(
+            project_root=str(tmp_path),
+            baseline_dir=str(tmp_path / ".baselines"),
+            output_dir=str(tmp_path / ".validation"),
+            whitelist_path=str(wl_path),
+            strict_mode=True,
+        )
+        validator = StrictValidator(config)
+
+        call_count = 0
+
+        def mismatch_test(context):
+            """Returns different non-numeric result on second call → BLOCKER."""
+            nonlocal call_count
+            call_count += 1
+            if call_count > 1:
+                return {"status": "degraded", "version": "2.0"}
+            return {"status": "healthy", "version": "1.0"}
+
+        suite = RegressionSuite(
+            suite_id="blocker_test",
+            name="Blocker Test Suite",
+            tests=[
+                RegressionTest(
+                    test_id="blocker_mismatch",
+                    name="Blocker Mismatch Test",
+                    description="test",
+                    test_function=mismatch_test,
+                    category="regression",
+                )
+            ],
+        )
+        validator.add_regression_suite(suite)
+
+        # First run → baseline
+        validator.validate_all()
+        validator.create_baseline()
+
+        # Second run → result mismatch = BLOCKER
+        validator.load_baseline()
+        results = validator.validate_all()
+
+        # BLOCKER should NOT be suppressed even with catch-all whitelist
+        assert results["summary"]["blocking_issues"] > 0
+        assert not results["overall_passed"]

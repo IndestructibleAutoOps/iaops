@@ -1,0 +1,1 @@
+修正方案（Fix Proposal）建立IndestructibleAutoOps可載入Pipeline + RoleRegistry + Policies + Schemas。實作：Adapter偵測、索引/快照、規範掃描、規劃/修補/驗證、雜湊封存、事件流閉環。交付：CLI + CI + 測試 + 範例髒亂專案。

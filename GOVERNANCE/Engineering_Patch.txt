@@ -1,0 +1,1 @@
+工程實作（Engineering Patch）新增：configs/ schemas/ src/ tests/ examples/ .github/workflows/ci.ymlCLI：indestructibleautoops run|plan|verify|seal|clean產物：.indestructibleautoops/{plan.json,patch-report.json,verify-report.json,governance/event-stream.jsonl,evidence/hash-manifest.json,seal/manifest.json}
