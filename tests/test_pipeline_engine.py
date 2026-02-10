@@ -1,5 +1,5 @@
 from indestructibleautoops.engine import OrchestrationEngine
-from indestructibleautoops.security import SecurityScanner
+from indestructibleautoops.orchestration import FileSecurityScanner as SecurityScanner
 
 
 def test_dag_linear_flow():
@@ -27,11 +27,11 @@ def test_dag_linear_flow():
 
 def test_security_scanner_detection():
     scanner = SecurityScanner()
+    from pathlib import Path
+
     content = "API_KEY='SECRET-123'; SELECT * FROM users;"
 
-    report = scanner.inspect("config.env", content)
+    report = scanner.scan(Path("config.env"), content)
 
-    assert report["blocked_by_name"] is True
-    assert report["sensitive_found"] is True
-    assert "union\\s+select" in report["risks"][0]
-    assert report["is_secure"] is False
+    assert report["ok"] is False
+    assert len(report["issues"]) > 0

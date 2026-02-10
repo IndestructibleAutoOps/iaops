@@ -6,7 +6,7 @@ from typing import Any
 
 import yaml
 
-from ..security import SecurityScanner
+from ..orchestration import FileSecurityScanner
 
 
 @dataclass(frozen=True)
@@ -50,7 +50,7 @@ class GenericAdapter:
         return {"root": str(self.ctx.project_root), "ts": "local"}
 
     def security_scan(self) -> dict[str, Any]:
-        scanner = SecurityScanner()
+        scanner = FileSecurityScanner()
         findings: list[dict[str, Any]] = []
         blocked = False
 
@@ -64,16 +64,14 @@ class GenericAdapter:
 
             try:
                 content = p.read_text(encoding="utf-8", errors="ignore")
-                report = scanner.inspect(str(rel), content)
+                report = scanner.scan(p, content)
 
-                if not report["is_secure"]:
+                if not report["ok"]:
                     blocked = True
                     findings.append(
                         {
                             "path": str(rel),
-                            "blocked_by_name": report["blocked_by_name"],
-                            "sensitive_found": report["sensitive_found"],
-                            "risks": report["risks"],
+                            "issues": report["issues"],
                         }
                     )
             except OSError:

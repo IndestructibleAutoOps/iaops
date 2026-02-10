@@ -7,15 +7,14 @@ framework for vulnerability management.
 """
 
 from .scanner import (
-    SecuritySeverity,
-    SecurityIssueType,
-    SecurityIssue,
-    SecurityScanResult,
-    SecurityScanner,
     ScannerRegistry,
+    SecurityIssue,
+    SecurityIssueType,
+    SecurityScanner,
+    SecurityScanResult,
+    SecuritySeverity,
     scanner_registry,
 )
-
 from .snyk_scanner import (
     SnykScanner,
     create_snyk_scanner,
@@ -25,18 +24,14 @@ __all__ = [
     # Enums
     "SecuritySeverity",
     "SecurityIssueType",
-    
     # Dataclasses
     "SecurityIssue",
     "SecurityScanResult",
-    
     # Protocol
     "SecurityScanner",
-    
     # Registry
     "ScannerRegistry",
     "scanner_registry",
-    
     # Scanners
     "SnykScanner",
     "create_snyk_scanner",

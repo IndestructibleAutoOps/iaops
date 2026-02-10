@@ -3,17 +3,15 @@ Tests for the Snyk security scanner.
 """
 
 import json
-import pytest
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
+from indestructibleautoops.security.scanner import (
+    SecurityIssueType,
+    SecuritySeverity,
+)
 from indestructibleautoops.security.snyk_scanner import (
     SnykScanner,
     create_snyk_scanner,
-)
-from indestructibleautoops.security.scanner import (
-    SecuritySeverity,
-    SecurityIssueType,
-    SecurityScanResult,
 )
 
 
@@ -204,7 +202,7 @@ class TestSnykScannerScan:
 
         scanner = SnykScanner()
         with patch.object(scanner, "is_available", return_value=True):
-            result = scanner.scan(
+            scanner.scan(
                 "/test/path",
                 config={"severity_threshold": "high"},
             )
@@ -225,7 +223,7 @@ class TestSnykScannerScan:
 
         scanner = SnykScanner()
         with patch.object(scanner, "is_available", return_value=True):
-            result = scanner.scan(
+            scanner.scan(
                 "/test/path",
                 {"scan_all_dependencies": True},
             )
