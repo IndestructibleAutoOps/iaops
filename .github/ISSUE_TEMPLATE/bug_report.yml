@@ -1,0 +1,74 @@
+name: "\U0001F41B Bug Report"
+description: Report a defect in IndestructibleAutoOps
+title: "[Bug]: "
+labels:
+  - bug
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve IndestructibleAutoOps. Please share a minimal, reproducible case so we can investigate quickly.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One line describing the issue
+      placeholder: "Engine crashes when DAG has optional nodes"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to Reproduce
+      description: List the exact steps and inputs used
+      placeholder: |
+        1. Run `indestructibleautoops plan --config ...`
+        2. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened (include full error text)
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, and how you installed dependencies
+      placeholder: "Ubuntu 22.04, Python 3.12, pip install -e .[dev]"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Screenshots
+      description: Relevant logs, stack traces, or screenshots
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact
+      options:
+        - Blocker
+        - High
+        - Medium
+        - Low
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have verified this issue with the latest main branch
+          required: true
+        - label: No sensitive or personal data is included in this report
+          required: true
