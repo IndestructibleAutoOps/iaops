@@ -1,8 +1,8 @@
 from indestructibleautoops.capability_assessment import (
+    EVIDENCE_REQUIREMENTS,
     CapabilityAssessment,
     CapabilityClaim,
     CapabilityEvidence,
-    EVIDENCE_REQUIREMENTS,
     evaluate_capabilities,
 )
 

@@ -9,8 +9,9 @@ categorized as unverified/fictional and the missing evidence is reported.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import Any
 
 EVIDENCE_REQUIREMENTS: dict[str, str] = {
     "inputs": "Provide concrete inputs or interface details",
