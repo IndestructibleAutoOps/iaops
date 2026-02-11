@@ -37,6 +37,22 @@ Implemented and usable today
 - Hashing and sealing: Produces SHA3-512/BLAKE3 manifests for the project (excluding `.git` and state dir) and writes evidence links (`hashing.py`, `sealing.py`).
 - Event logging: Emits JSONL events validated by `schemas/event.schema.json` to the configured path for each step (`observability.py`).
 
+Supply Chain v1.0 (Build → SBOM → Sign → Verify)
+------------------------------------------------
+- CI helpers live under `scripts/ci/`:
+  - `build_sign_show.py` builds the image, generates a CycloneDX SBOM with Syft, and signs via Cosign.
+  - `verify_gate.py` verifies signatures, attestations, and SBOM presence.
+  - `dependericy_check.py` evaluates SBOM data for vulnerabilities and license policy.
+- Policies and manifests:
+  - Rego policy: `policy/rego/supplychain.rego` (usable with `conftest test`).
+  - GitHub Actions workflow: `.github/workflows/_build_sign_sbom.yml`.
+  - Kubernetes deployment: `k8s/supplychain/deployment.yaml`.
+  - Docker image packaging: `Dockerfile`.
+- Configs and monitoring:
+  - Defaults: `configs/supplychain.defaults.yaml`, `configs/supplychain.env.example`.
+  - Audit log + anomaly detection: `scripts/monitoring/audit_logger.py`, `scripts/monitoring/anomaly_detector.py`.
+- See `docs/supplychain.md` for quickstart commands.
+
 Placeholders / fictional capabilities (not implemented)
 -------------------------------------------------------
 - No real multi-agent orchestration or rich policy execution despite the role/policy configs; they are only schema-validated and enforced via basic helpers, not a full policy engine.
