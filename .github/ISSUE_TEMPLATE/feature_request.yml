@@ -1,0 +1,60 @@
+name: "\U0001F680 Feature Request"
+description: Suggest an improvement or new capability
+title: "[Feature]: "
+labels:
+  - enhancement
+  - needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please focus on the problem to solve and the outcome you want. Concrete acceptance criteria help us prioritize.
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence describing the request
+      placeholder: "Support custom validation hooks in the pipeline"
+    validations:
+      required: true
+  - type: textarea
+    id: use_case
+    attributes:
+      label: Use Case / Problem
+      description: What goal or pain point does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: Outline the behavior or API you expect
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Other approaches you evaluated
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Checklist the solution should satisfy
+      placeholder: |
+        - Works for python/node/go projects
+        - Fails pipeline on missing acceptance criteria
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Links, references, or related issues
+  - type: checkboxes
+    id: readiness
+    attributes:
+      label: Confirmation
+      options:
+        - label: This request aligns with the project's scope and governance model
+          required: true
+        - label: No sensitive or personal data is included in this request
+          required: true
