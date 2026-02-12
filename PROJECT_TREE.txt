@@ -1,53 +1,163 @@
 .
-├── README.md
-├── Makefile
-├── pyproject.toml
-├── uv.lock
-├── .gitignore
-├── .github
-│   └── workflows
-│       └── ci.yml
-├── configs
-│   ├── indestructibleautoops.pipeline.yaml
-│   ├── indestructibleautoops.roles.yaml
-│   ├── indestructibleautoops.policies.yaml
-│   └── indestructibleautoops.adapters.yaml
-├── schemas
-│   ├── pipeline.schema.json
-│   ├── roles.schema.json
-│   ├── policies.schema.json
-│   └── event.schema.json
-├── src
-│   └── indestructibleautoops
-│       ├── __init__.py
-│       ├── main.py
-│       ├── cli.py
-│       ├── engine.py
-│       ├── graph.py
-│       ├── io.py
-│       ├── hashing.py
-│       ├── normalize.py
-│       ├── scanner.py
-│       ├── planner.py
-│       ├── patcher.py
-│       ├── verifier.py
-│       ├── sealing.py
-│       ├── observability.py
-│       └── adapters
-│           ├── __init__.py
-│           ├── generic.py
-│           ├── python.py
-│           ├── node.py
-│           └── go.py
-├── tests
-│   ├── test_graph.py
-│   ├── test_schema.py
-│   └── test_end_to_end.py
-└── examples
-    ├── dirty_project
-    │   ├── README.md
-    │   ├── package.json
-    │   ├── src
-    │   │   └── index.js
-    │   └── requirements.txt
-    └── run.sh
+    .gitignore
+    AGENT_SYSTEM_SUMMARY.md
+    Dockerfile
+    ENTERPRISE_STRICT_ENGINEERING_REPORT.md
+    Makefile
+    PROJECT_TREE.txt
+    README.md
+    STRICT_VALIDATION_SYSTEM.md
+    pyproject.toml
+    uv.lock
+    .baselines/
+        FileCheckValidator.json
+        FunctionalValidator.json
+        MetricsValidator.json
+        PerformanceValidator.json
+        RegressionValidator.json
+    .github/
+        workflows/
+            _build_sign_sbom.yml
+            ci.yml
+    .validation/
+        validation_20260211_130928.json
+        validation_latest.json
+    GOVERNANCE/
+        Engineering_Patch.txt
+        Fix_Proposal.txt
+        Governance_Compliance_Check.txt
+        Problem_Identification.txt
+        Root_Cause_Analysis.txt
+        Verification_Steps.txt
+    configs/
+        indestructibleautoops.adapters.yaml
+        indestructibleautoops.pipeline.yaml
+        indestructibleautoops.policies.yaml
+        indestructibleautoops.roles.yaml
+        supplychain.defaults.yaml
+        supplychain.env.example
+        validation_whitelist.yaml
+    docs/
+        supplychain.md
+    examples/
+        multi_agent_example.py
+        run.sh
+        simple_agent_test.py
+        simple_orchestrator_test.py
+        dirty_project/
+            README.md
+            package.json
+            pyproject.toml
+            requirements.txt
+            .github/
+                workflows/
+                    ci.yml
+            src/
+                index.js
+    k8s/
+        supplychain/
+            deployment.yaml
+    policy/
+        rego/
+            supplychain.rego
+    schemas/
+        event.schema.json
+        pipeline.schema.json
+        policies.schema.json
+        roles.schema.json
+    scripts/
+        __init__.py
+        run_strict_validation.py
+        test_regression_detection.py
+        ci/
+            __init__.py
+            build_sign_show.py
+            dependericy_check.py
+            verify_gate.py
+        monitoring/
+            __init__.py
+            anomaly_detector.py
+            audit_logger.py
+    src/
+        indestructibleautoops/
+            __init__.py
+            capability_assessment.py
+            cli.py
+            engine.py
+            graph.py
+            hashing.py
+            io.py
+            main.py
+            normalize.py
+            observability.py
+            orchestration.py
+            patcher.py
+            planner.py
+            scanner.py
+            sealing.py
+            security.py
+            verifier.py
+            adapters/
+                __init__.py
+                generic.py
+                go.py
+                node.py
+                python.py
+            agents/
+                __init__.py
+                base.py
+                communication.py
+                coordination.py
+                lifecycle.py
+                orchestrator.py
+                policy_engine.py
+                registry.py
+                concrete/
+                    __init__.py
+                    control_plane.py
+                    data_plane.py
+                    delivery.py
+                    observability.py
+                    policy.py
+                    reasoning.py
+            security/
+                __init__.py
+                scanner.py
+                snyk_scanner.py
+            validation/
+                __init__.py
+                engine.py
+                file_validator.py
+                functional_validator.py
+                metrics.py
+                performance_validator.py
+                regression.py
+                regression_detector.py
+                strict_validator.py
+                validator.py
+                whitelist.py
+        indestructibleautoops.egg-info/
+            PKG-INFO
+            SOURCES.txt
+            dependency_links.txt
+            entry_points.txt
+            requires.txt
+            top_level.txt
+    tests/
+        test_capability_assessment.py
+        test_end_to_end.py
+        test_engine.py
+        test_file_validator.py
+        test_functional_validator.py
+        test_graph.py
+        test_metrics.py
+        test_orchestration.py
+        test_patcher.py
+        test_performance_validator.py
+        test_pipeline_engine.py
+        test_regression_detector.py
+        test_scanner.py
+        test_schema.py
+        test_snyk_scanner.py
+        test_supplychain_v1.py
+        test_whitelist.py

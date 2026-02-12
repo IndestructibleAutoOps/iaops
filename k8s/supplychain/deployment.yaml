@@ -1,0 +1,70 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: iaops-supplychain
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: iaops-supplychain
+  namespace: iaops-supplychain
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iaops-supplychain
+  namespace: iaops-supplychain
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: iaops-supplychain
+  template:
+    metadata:
+      labels:
+        app: iaops-supplychain
+    spec:
+      serviceAccountName: iaops-supplychain
+      containers:
+        - name: iaops
+          image: ghcr.io/indestructibleautoops/iaops:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: IAOPS_CONFIG
+              value: /etc/iaops/config.yaml
+          volumeMounts:
+            - name: config
+              mountPath: /etc/iaops
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: iaops-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: iaops-supplychain
+  namespace: iaops-supplychain
+spec:
+  selector:
+    app: iaops-supplychain
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: iaops-config
+  namespace: iaops-supplychain
+data:
+  config.yaml: |
+    registry: ghcr.io/indestructibleautoops
+    image: iaops:latest
+    verify:
+      key_ref: cosign.pub
+      policy: /etc/iaops/policy/rego/supplychain.rego
+    logging:
+      audit_path: /var/log/iaops/audit.log
